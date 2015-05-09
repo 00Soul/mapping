@@ -1,4 +1,4 @@
-package mapping
+package mappings
 
 import (
 	"reflect"
@@ -18,7 +18,7 @@ type Mapping struct {
 }
 
 type Context struct {
-	mappings map[reflect.Type]Mapping
+	mappingsMap map[reflect.Type]Mapping
 }
 
 var globalContext *Context = nil
@@ -26,7 +26,7 @@ var globalContext *Context = nil
 func NewContext() *Context {
 	c := new(Context)
 
-	c.mappings = make(map[reflect.Type]Mapping)
+	c.mappingsMap = make(map[reflect.Type]Mapping)
 
 	return c
 }
@@ -56,13 +56,13 @@ func (c *Context) New(t reflect.Type) *Mapping {
 	m.structType = t
 	m.fields = make(map[string]Field)
 
-	c.mappings[t] = m
+	c.mappingsMap[t] = m
 
 	return &m
 }
 
 func (c Context) Get(t reflect.Type) *Mapping {
-	if m, found := c.mappings[t]; found {
+	if m, found := c.mappingsMap[t]; found {
 		return &m
 	} else {
 		return nil
@@ -70,7 +70,7 @@ func (c Context) Get(t reflect.Type) *Mapping {
 }
 
 func (c Context) Del(t reflect.Type) {
-	delete(c.mappings, t)
+	delete(c.mappingsMap, t)
 }
 
 func (m Mapping) FieldByName(name string) *Field {
