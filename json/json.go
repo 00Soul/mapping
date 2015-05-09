@@ -25,14 +25,14 @@ func (s *Serializer) Use(c *mapping.Context) {
 
 func getDefault() *Serializer {
 	if defaultSerializer == nil {
-		defaultSerialzer = New(mapping.Global())
+		defaultSerializer = New(mapping.Global())
 	}
 
 	return defaultSerializer
 }
 
 func Use(c *mapping.Context) {
-	getDefault.Use(c)
+	getDefault().Use(c)
 }
 
 func Marshal(i interface{}) ([]byte, error) {
@@ -125,7 +125,7 @@ func (s Serializer) toSlice(i interface{}) []interface{} {
 	islice, ok := i.([]interface{})
 	if ok {
 		for _, item := range islice {
-			bytes, err := c.Marshal(item)
+			bytes, err := s.Marshal(item)
 			if err == nil {
 				slice = append(slice, bytes)
 			}
@@ -135,70 +135,80 @@ func (s Serializer) toSlice(i interface{}) []interface{} {
 	return slice
 }
 
-func (c Context) fromSlice(i []interface{}, t reflect.Type) interface{} {
-	//slice := reflect.MakeSlice(reflect.SliceOf(t), 0, 1)
-	slice := make([]interface{}, 0, 1)
+func (s Serializer) fromSlice(i []interface{}, t reflect.Type) interface{} {
+	slice := reflect.MakeSlice(reflect.SliceOf(t), 0, 1).Interface()
+	//slice := make([]interface{}, 0, 1)
 
 	for _, item := range i {
-		slice = append(slice, c.unflatten(item, t))
+		slice = append(slice, s.unflatten(item, t))
 	}
 
 	return slice
 }
 
-func (c Context) toMap(i interface{}) map[string][]byte {
+func (s Serializer) toMap(i interface{}) map[string][]byte {
 	m := make(map[string][]byte)
 
 	v := reflect.ValueOf(i)
-	mapping, found := c.mappings[v.Type()]
+	mapping := s.context.Get(v.Type())
 
 	for n := 0; n < v.NumField(); n++ {
-		var field Field
-		var fieldFound bool
+		var key string = v.Type().Field(n).Name
+		var field *mapping.Field = nil
 
-		name := v.Type().Field(n).Name
-
-		if found {
-			field, fieldFound = mapping.fields[name]
-			name = mapping.fields[name].flattenedName
+		if mapping != nil {
+			if field = mapping.FieldByName(key); field != nil {
+				key = field.GetName()
+			}
 		}
 
+		usedFieldToFlatten := false
 		fv := v.Field(n).Interface()
 
-		if fieldFound && field.flattenFunc != nil {
-			m[name], _ = json.Marshal(field.flattenFunc(fv))
-		} else {
-			m[name], _ = c.Marshal(fv)
+		if field != nil {
+			if fn := field.GetFlattenFunc(); fn != nil {
+				m[key], _ = json.Marshal(fn(fv))
+				usedFieldToFlatten = true
+			}
+		}
+
+		if !usedFieldToFlatten {
+			m[key], _ = s.Marshal(fv)
 		}
 	}
 
 	return m
 }
 
-func (c Context) fromMap(m map[string]interface{}, t reflect.Type) reflect.Value {
+func (s Serializer) fromMap(m map[string]interface{}, t reflect.Type) reflect.Value {
 	p := reflect.New(t)
 	v := p.Elem()
 
-	mapping, found := c.mappings[v.Type()]
+	mapping := s.context.Get(v.Type())
 
 	for n := 0; n < v.NumField(); n++ {
-		var field Field
-		var fieldFound bool
+		var key string = v.Type().Field(n).Name
+		var field *mapping.Field = nil
 
-		key := v.Type().Field(n).Name
-
-		if found {
-			field, fieldFound = mapping.fields[key]
-			key = mapping.fields[key].flattenedName
+		if mapping != nil {
+			if field = mapping.FieldByName(key); field != nil {
+				key = field.GetName()
+			}
 		}
 
 		if value, keyFound := m[key]; keyFound {
+			var usedFieldToUnflatten bool = false
 			var i interface{}
 
-			if fieldFound && field.unflattenFunc != nil {
-				i = field.unflattenFunc(value)
-			} else {
-				i = c.unflatten(value, v.Field(n).Type())
+			if field != nil {
+				if fn := field.GetUnflattenFunc(); fn != nil {
+					i = fn(value)
+					usedFieldToUnflatten = true
+				}
+			}
+
+			if !usedFieldToUnflatten {
+				i = s.unflatten(value, v.Field(n).Type())
 			}
 
 			v.Field(n).Set(reflect.ValueOf(i))
