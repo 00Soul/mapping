@@ -2,36 +2,42 @@ package json
 
 import (
 	"encoding/json"
-	"github.com/00Soul/mapping"
+	"github.com/00Soul/mappings"
 	"reflect"
 )
 
 type Serializer struct {
-	context *mapping.Context
+	context *mappings.Context
+}
+
+type Encoder struct {
+}
+
+type Decoder struct {
 }
 
 var defaultSerializer *Serializer
 
-func New(c *mapping.Context) *Serializer {
+func New(c *mappings.Context) *Serializer {
 	s := new(Serializer)
 	s.Use(c)
 
 	return s
 }
 
-func (s *Serializer) Use(c *mapping.Context) {
+func (s *Serializer) Use(c *mappings.Context) {
 	s.context = c
 }
 
 func getDefault() *Serializer {
 	if defaultSerializer == nil {
-		defaultSerializer = New(mapping.Global())
+		defaultSerializer = New(mappings.Global())
 	}
 
 	return defaultSerializer
 }
 
-func Use(c *mapping.Context) {
+func Use(c *mappings.Context) {
 	getDefault().Use(c)
 }
 
@@ -43,7 +49,33 @@ func Unmarshal(data []byte, i interface{}) error {
 	return getDefault().Unmarshal(data, i)
 }
 
+func NewEncoder(w io.Writer) *Encoder {
+	return NewEncoderWithContext(w, nil)
+}
+
+func NewEncoderWithContext(w io.Writer, c mappings.Context) *Encoder {
+	encoder := new(Encoder)
+	encoder.writer = w
+	encoder.context = c
+
+	return encoder
+}
+
+func (e *Encoder) Encode(i interface{}) error {
+	if e.context == nil {
+		e.context = mappings.Global()
+	}
+
+	_, err := e.Write(s.flatten(i))
+
+	return err
+}
+
 func (s Serializer) Marshal(i interface{}) ([]byte, error) {
+	return json.Marshal(s.flatten(i))
+}
+
+func (s Serializer) flatten(i interface{}) interface{} {
 	var v interface{}
 
 	t := reflect.TypeOf(i)
@@ -55,7 +87,7 @@ func (s Serializer) Marshal(i interface{}) ([]byte, error) {
 		v = s.toSlice(i)
 	default:
 		if mapping := s.context.Get(t); mapping != nil {
-			if fn := mapping.GetFlattenFunc(); fn != nil {
+			if fn := tm.GetFlattenFunc(); fn != nil {
 				v = fn(i)
 			} else {
 				v = i
@@ -65,7 +97,7 @@ func (s Serializer) Marshal(i interface{}) ([]byte, error) {
 		}
 	}
 
-	return json.Marshal(v)
+	return v
 }
 
 func (s Serializer) Unmarshal(data []byte, i interface{}) error {
@@ -85,7 +117,7 @@ func (s Serializer) unflatten(i interface{}, t reflect.Type) interface{} {
 	failed := false
 
 	if mapping != nil {
-		if fn := mapping.GetUnflattenFunc(); fn != nil {
+		if fn := tm.GetUnflattenFunc(); fn != nil {
 			v = fn(i)
 		} else if m, isMap := i.(map[string]interface{}); isMap && t.Kind() == reflect.Struct {
 			v = s.fromMap(m, t)
@@ -103,18 +135,6 @@ func (s Serializer) unflatten(i interface{}, t reflect.Type) interface{} {
 			}
 		}
 	}
-
-	/*if found && mapping.unflattenFunc != nil {
-		v = mapping.unflattenFunc(i)
-	} else if m, isMap := i.(map[string]interface{}); found && isMap && t.Kind() == reflect.Struct {
-		v = c.fromMap(m, t)
-	} else if slice, isSlice := i.([]interface{}); isSlice && t.Kind() == reflect.Slice {
-		v = c.fromSlice(slice, t)
-	} else {
-		if bytes, isByteSlice := i.([]byte); isByteSlice {
-			json.Unmarshal(bytes, &v)
-		}
-	}*/
 
 	return v
 }
@@ -136,14 +156,13 @@ func (s Serializer) toSlice(i interface{}) []interface{} {
 }
 
 func (s Serializer) fromSlice(i []interface{}, t reflect.Type) interface{} {
-	slice := reflect.MakeSlice(reflect.SliceOf(t), 0, 1).Interface()
-	//slice := make([]interface{}, 0, 1)
+	slice := reflect.MakeSlice(reflect.SliceOf(t), 0, 1)
 
 	for _, item := range i {
-		slice = append(slice, s.unflatten(item, t))
+		slice = reflect.Append(slice, reflect.ValueOf(s.unflatten(item, t)))
 	}
 
-	return slice
+	return slice.Interface()
 }
 
 func (s Serializer) toMap(i interface{}) map[string][]byte {
@@ -154,10 +173,10 @@ func (s Serializer) toMap(i interface{}) map[string][]byte {
 
 	for n := 0; n < v.NumField(); n++ {
 		var key string = v.Type().Field(n).Name
-		var field *mapping.Field = nil
+		var field *mappings.Field = nil
 
 		if mapping != nil {
-			if field = mapping.FieldByName(key); field != nil {
+			if field = tm.FieldByName(key); field != nil {
 				key = field.GetName()
 			}
 		}
@@ -188,10 +207,10 @@ func (s Serializer) fromMap(m map[string]interface{}, t reflect.Type) reflect.Va
 
 	for n := 0; n < v.NumField(); n++ {
 		var key string = v.Type().Field(n).Name
-		var field *mapping.Field = nil
+		var field *mappings.Field = nil
 
 		if mapping != nil {
-			if field = mapping.FieldByName(key); field != nil {
+			if field = tm.FieldByName(key); field != nil {
 				key = field.GetName()
 			}
 		}
