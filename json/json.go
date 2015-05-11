@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/00Soul/mappings"
 	"io"
+	"io/ioutil"
 	"reflect"
 )
 
@@ -49,18 +50,23 @@ func Encode(w io.Writer, i interface{}) error {
 }
 
 func EncodeWithContext(w io.Writer, i interface{}, c *mappings.Context) error {
-	var err error = nil
+	var bytes []byte
+	var err error
 
-	bytes, marshalError := MarshalWithContext(i, c)
-	if marshalError != nil {
-		err = marshalError
-	} else {
-		_, writeError := w.Write(bytes)
-		if writeError != nil {
-			err = writeError
-		}
+	if bytes, err = MarshalWithContext(i, c); err == nil {
+		_, err = w.Write(bytes)
 	}
-
+	/*
+		bytes, marshalError := MarshalWithContext(i, c)
+		if marshalError != nil {
+			err = marshalError
+		} else {
+			_, writeError := w.Write(bytes)
+			if writeError != nil {
+				err = writeError
+			}
+		}
+	*/
 	return err
 }
 
@@ -94,11 +100,19 @@ func Unmarshal(data []byte, i interface{}) error {
 }
 
 func UnmarshalWithContext(data []byte, i interface{}, c *mappings.Context) error {
-	var v interface{}
+	var j interface{}
+	var err error
 
-	err := json.Unmarshal(data, &v)
-	obj := unflatten(v, reflect.TypeOf(i), c)
-	i = &obj
+	if err = json.Unmarshal(data, &j); err == nil {
+		if p := reflect.ValueOf(i); p.Type().Kind() == reflect.Ptr {
+			if v := p.Elem(); v.CanSet() {
+				object := unflatten(j, v.Type(), c)
+				if reflect.TypeOf(object).AssignableTo(v.Type()) {
+					v.Set(reflect.ValueOf(object))
+				}
+			}
+		}
+	}
 
 	return err
 }
@@ -111,8 +125,8 @@ func DecodeWithContext(r io.Reader, i interface{}, c *mappings.Context) error {
 	var data []byte
 	var err error
 
-	if _, err = r.Read(data); err == nil {
-		i = unflatten(data, reflect.TypeOf(i), c)
+	if data, err = ioutil.ReadAll(r); err == nil {
+		err = UnmarshalWithContext(data, i, c)
 	}
 
 	return err
