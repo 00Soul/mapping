@@ -122,14 +122,23 @@ func Decode(r io.Reader, i interface{}) error {
 }
 
 func DecodeWithContext(r io.Reader, i interface{}, c *mappings.Context) error {
-	var data []byte
-	var err error
-
-	if data, err = ioutil.ReadAll(r); err == nil {
+	data, err := ioutil.ReadAll(r)
+	if err == nil {
 		err = UnmarshalWithContext(data, i, c)
 	}
 
 	return err
+}
+
+func DecodeMap(r io.Reader) (map[string]string, error) {
+	var object map[string]string
+
+	data, err := ioutil.ReadAll(r)
+	if err == nil {
+		err = json.Unmarshal(data, &object)
+	}
+
+	return object, err
 }
 
 func unflatten(i interface{}, t reflect.Type, c *mappings.Context) interface{} {
